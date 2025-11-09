@@ -15,6 +15,7 @@ from app.services.llm_service import LLMService
 from app.services.visualization_service import VisualizationService
 from app.services.local_analytics_llm import LocalAnalyticsLLM
 from app.services.smart_llm_analyzer import SmartLLMAnalyzer
+from app.api.industrial_llm import router as industrial_llm_router
 
 load_dotenv()
 
@@ -63,6 +64,9 @@ llm_service = LLMService()
 visualization_service = VisualizationService()
 local_analytics = LocalAnalyticsLLM()
 smart_analyzer = SmartLLMAnalyzer()  # LLM-powered intelligent analysis
+
+# Include API routers
+app.include_router(industrial_llm_router)
 
 
 class CleaningOptions(BaseModel):
