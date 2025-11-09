@@ -380,7 +380,7 @@ export default function Home() {
                           )}
                           {insight.percent && (
                             <p className="text-slate-300 text-sm mb-2">
-                              <span className="text-slate-400">Affected:</span> {insight.percent.toFixed(1)}% of data
+                              <span className="text-slate-400">Affected:</span> {typeof insight.percent === 'number' ? insight.percent.toFixed(1) : insight.percent}% of data
                             </p>
                           )}
                           {insight.description && (
