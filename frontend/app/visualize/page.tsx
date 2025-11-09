@@ -230,6 +230,23 @@ export default function VisualizePage() {
       {/* Main Content */}
       <div className="container mx-auto px-4 py-12">
         <div className="space-y-8">
+          {/* Quick Quality Summary (Llama 3.1 8B Analysis) */}
+          {data.originalAnalysis && !data.isDataCleaned && (
+            <Card className="bg-gradient-to-r from-blue-500/10 to-cyan-500/10 backdrop-blur-sm border-blue-500/30 p-6">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h3 className="text-lg font-bold text-white mb-1">Data Quality Score</h3>
+                  <p className="text-sm text-slate-400">
+                    Analyzed by Llama 3.1 8B - {data.originalAnalysis.insights?.length || 0} issues found
+                  </p>
+                </div>
+                <div className="text-right">
+                  <p className="text-4xl font-bold text-blue-400">{data.originalAnalysis.quality_score || 0}/100</p>
+                </div>
+              </div>
+            </Card>
+          )}
+
           {/* Controls */}
           <Card className="bg-slate-800/50 backdrop-blur-sm border-slate-700 p-6">
             <div className="space-y-4">

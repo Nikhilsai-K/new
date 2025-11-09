@@ -173,6 +173,20 @@ export default function DashboardPage() {
       {/* Main Content */}
       <div className="container mx-auto px-4 py-12">
         <div className="space-y-8">
+          {/* Quality Analysis Summary (Llama 3.1 8B) */}
+          {data.originalAnalysis && (
+            <Card className="bg-gradient-to-r from-purple-500/10 to-pink-500/10 backdrop-blur-sm border-purple-500/30 p-6">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h3 className="text-lg font-bold text-white mb-1">Data Quality Analysis</h3>
+                  <p className="text-sm text-slate-400">
+                    Llama 3.1 8B identified {data.originalAnalysis.insights?.length || 0} issues - Quality Score: {data.originalAnalysis.quality_score || 0}/100
+                  </p>
+                </div>
+              </div>
+            </Card>
+          )}
+
           {/* Summary Stats */}
           {dashboardData?.summary && (
             <Card className="bg-gradient-to-r from-blue-500/10 to-cyan-500/10 backdrop-blur-sm border border-slate-600 p-8">
