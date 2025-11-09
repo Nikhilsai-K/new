@@ -11,8 +11,8 @@ class DataCleaner:
     def analyze_data(self, df: pd.DataFrame) -> Dict[str, Any]:
         """Analyze data quality and detect issues"""
         analysis = {
-            "total_rows": len(df),
-            "total_columns": len(df.columns),
+            "total_rows": int(len(df)),
+            "total_columns": int(len(df.columns)),
             "issues": [],
             "quality_score": 100,
             "column_analysis": {}
@@ -75,7 +75,25 @@ class DataCleaner:
         # Calculate final quality score
         analysis["quality_score"] = max(0, round(100 - deductions, 2))
 
+        # Convert all numpy types to Python native types for JSON serialization
+        analysis = self._convert_numpy_types(analysis)
+
         return analysis
+
+    def _convert_numpy_types(self, obj: Any) -> Any:
+        """Recursively convert numpy/pandas types to Python native types"""
+        if isinstance(obj, dict):
+            return {k: self._convert_numpy_types(v) for k, v in obj.items()}
+        elif isinstance(obj, list):
+            return [self._convert_numpy_types(item) for item in obj]
+        elif isinstance(obj, (np.integer, np.int64, np.int32)):
+            return int(obj)
+        elif isinstance(obj, (np.floating, np.float64)):
+            return float(obj)
+        elif isinstance(obj, np.bool_):
+            return bool(obj)
+        else:
+            return obj
 
     def clean_data(
         self,

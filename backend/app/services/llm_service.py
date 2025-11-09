@@ -1,28 +1,16 @@
 import os
 from typing import Dict, List, Any
 import pandas as pd
-from langchain_google_genai import ChatGoogleGenerativeAI
-from langchain.prompts import PromptTemplate
-from langchain.chains import LLMChain
+import google.generativeai as genai
 
 
 class LLMService:
-    """AI service for intelligent data cleaning suggestions using LangChain"""
+    """AI service for intelligent data cleaning suggestions using Google Generative AI"""
 
     def __init__(self):
-        self.llm = None
-        api_key = os.getenv("GOOGLE_API_KEY")
-
-        if api_key:
-            try:
-                self.llm = ChatGoogleGenerativeAI(
-                    model="gemini-pro",
-                    google_api_key=api_key,
-                    temperature=0.3,
-                    convert_system_message_to_human=True
-                )
-            except Exception as e:
-                print(f"Failed to initialize LLM: {e}")
+        self.api_key = os.getenv("GOOGLE_API_KEY")
+        if self.api_key:
+            genai.configure(api_key=self.api_key)
 
     async def get_cleaning_suggestions(
         self,
@@ -31,21 +19,19 @@ class LLMService:
         cleaning_report: Dict[str, Any]
     ) -> List[str]:
         """Get AI suggestions based on cleaning results"""
-        if not self.llm:
+        if not self.api_key:
             return ["AI service not available. Configure GOOGLE_API_KEY to enable."]
 
         try:
-            prompt = PromptTemplate(
-                input_variables=["report", "columns", "sample_data"],
-                template="""You are a data quality expert. Based on the cleaning report below, provide 3-5 brief, actionable suggestions to further improve data quality.
+            prompt = f"""You are a data quality expert. Based on the cleaning report below, provide 3-5 brief, actionable suggestions to further improve data quality.
 
 Cleaning Report:
-{report}
+{str(cleaning_report)}
 
-Columns: {columns}
+Columns: {", ".join(cleaned_df.columns.tolist())}
 
 Sample Data (first 3 rows):
-{sample_data}
+{str(cleaned_df.head(3).to_dict(orient='records'))}
 
 Provide concise, bullet-point suggestions focusing on:
 1. Additional cleaning steps
@@ -53,24 +39,14 @@ Provide concise, bullet-point suggestions focusing on:
 3. Potential data enrichment opportunities
 
 Format as a simple numbered list."""
-            )
 
-            chain = prompt | self.llm
+            model = genai.GenerativeModel('gemini-pro')
+            response = model.generate_content(prompt)
 
-            # Prepare data
-            sample_data = cleaned_df.head(3).to_dict(orient='records')
-
-            response = await chain.ainvoke({
-                "report": str(cleaning_report),
-                "columns": ", ".join(cleaned_df.columns.tolist()),
-                "sample_data": str(sample_data)
-            })
-
-            # Extract suggestions
-            suggestions_text = response.content if hasattr(response, 'content') else str(response)
+            suggestions_text = response.text
             suggestions = [s.strip() for s in suggestions_text.split('\n') if s.strip() and len(s.strip()) > 5]
 
-            return suggestions[:5]  # Limit to 5 suggestions
+            return suggestions[:5]
 
         except Exception as e:
             return [f"Error generating AI suggestions: {str(e)}"]
@@ -81,31 +57,29 @@ Format as a simple numbered list."""
         analysis: Dict[str, Any]
     ) -> List[Dict[str, Any]]:
         """Get smart AI-powered suggestions for data quality issues"""
-        if not self.llm:
+        if not self.api_key:
             return [{
                 "type": "info",
                 "message": "AI service not available. Configure GOOGLE_API_KEY to enable smart suggestions."
             }]
 
         try:
-            prompt = PromptTemplate(
-                input_variables=["analysis", "columns", "sample"],
-                template="""You are a data cleaning AI assistant. Analyze this dataset and provide specific, actionable cleaning recommendations.
+            prompt = f"""You are a data cleaning AI assistant. Analyze this dataset and provide specific, actionable cleaning recommendations.
 
 Data Analysis:
-- Total rows: {analysis[total_rows]}
-- Total columns: {analysis[total_columns]}
-- Quality score: {analysis[quality_score]}/100
+- Total rows: {analysis.get('total_rows', 0)}
+- Total columns: {analysis.get('total_columns', 0)}
+- Quality score: {analysis.get('quality_score', 0)}/100
 
 Issues found:
-{analysis[issues]}
+{analysis.get('issues', 'None')}
 
-Columns: {columns}
+Columns: {", ".join(df.columns.tolist())}
 
 Sample data:
-{sample}
+{df.head(5).to_string()}
 
-Provide 5-7 specific recommendations in this exact JSON-like format:
+Provide 5-7 specific recommendations in this exact format:
 1. [Action Type] - Brief description of what to do
 2. [Action Type] - Brief description of what to do
 
@@ -117,26 +91,16 @@ Focus on:
 - Data type conversions
 
 Be specific and actionable."""
-            )
 
-            chain = prompt | self.llm
+            model = genai.GenerativeModel('gemini-pro')
+            response = model.generate_content(prompt)
 
-            sample = df.head(5).to_string()
-
-            response = await chain.ainvoke({
-                "analysis": analysis,
-                "columns": ", ".join(df.columns.tolist()),
-                "sample": sample
-            })
-
-            # Parse response
-            suggestions_text = response.content if hasattr(response, 'content') else str(response)
+            suggestions_text = response.text
 
             suggestions = []
             for line in suggestions_text.split('\n'):
                 line = line.strip()
                 if line and len(line) > 10:
-                    # Extract action type and message
                     if '[' in line and ']' in line:
                         action_type = line[line.find('[')+1:line.find(']')]
                         message = line[line.find(']')+1:].strip(' -').strip()

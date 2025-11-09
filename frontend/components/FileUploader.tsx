@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useState } from 'react'
+import { useCallback, useState, useRef } from 'react'
 import { Upload, FileSpreadsheet, X } from 'lucide-react'
 import Button from '@/components/ui/Button'
 import Card from '@/components/ui/Card'
@@ -10,6 +10,7 @@ interface FileUploaderProps {
 }
 
 export default function FileUploader({ onFileSelect }: FileUploaderProps) {
+  const fileInputRef = useRef<HTMLInputElement>(null)
   const [isDragging, setIsDragging] = useState(false)
   const [selectedFile, setSelectedFile] = useState<File | null>(null)
 
@@ -55,6 +56,10 @@ export default function FileUploader({ onFileSelect }: FileUploaderProps) {
     setSelectedFile(null)
   }
 
+  const handleSelectFileClick = () => {
+    fileInputRef.current?.click()
+  }
+
   return (
     <Card className="bg-white/5 backdrop-blur-sm border-white/10">
       <div
@@ -70,6 +75,7 @@ export default function FileUploader({ onFileSelect }: FileUploaderProps) {
         onDrop={handleDrop}
       >
         <input
+          ref={fileInputRef}
           type="file"
           id="file-upload"
           className="hidden"
@@ -90,20 +96,19 @@ export default function FileUploader({ onFileSelect }: FileUploaderProps) {
                 Drop your file here, or browse
               </h3>
               <p className="text-gray-400">
-                Supports CSV, Excel (.xlsx, .xls) • Max 10MB
+                Supports CSV, Excel (.xlsx, .xls) • Max 500MB
               </p>
             </div>
 
             <div>
-              <label htmlFor="file-upload">
-                <Button
-                  as="span"
-                  size="lg"
-                  className="cursor-pointer"
-                >
-                  Select File
-                </Button>
-              </label>
+              <Button
+                type="button"
+                size="lg"
+                className="cursor-pointer"
+                onClick={handleSelectFileClick}
+              >
+                Select File
+              </Button>
             </div>
           </div>
         ) : (

@@ -19,7 +19,11 @@ export default function DataPreview({ data, onClean, loading }: DataPreviewProps
     useAI: false,
   })
 
-  const qualityScore = data.analysis?.quality_score || 0
+  const qualityScore = data.quality_score || data.analysis?.quality_score || 0
+  const insights = data.insights || data.analysis?.insights || []
+  const recommendations = data.recommendations || data.analysis?.recommendations || []
+  const detailedMetrics = data.detailed_metrics || data.analysis?.detailed_metrics || {}
+
   const getScoreColor = (score: number) => {
     if (score >= 80) return 'text-green-400'
     if (score >= 50) return 'text-yellow-400'
@@ -52,24 +56,61 @@ export default function DataPreview({ data, onClean, loading }: DataPreviewProps
         </div>
       </Card>
 
-      {/* Issues Found */}
-      {data.analysis?.issues && data.analysis.issues.length > 0 && (
+      {/* Issues Found - Insights */}
+      {insights && insights.length > 0 && (
         <Card className="bg-white/5 backdrop-blur-sm border-white/10">
           <h3 className="text-xl font-semibold text-white mb-4 flex items-center">
             <AlertCircle className="w-5 h-5 mr-2 text-yellow-400" />
-            Issues Found
+            Issues Found ({insights.length})
           </h3>
-          <div className="space-y-3">
-            {data.analysis.issues.map((issue: any, idx: number) => (
+          <div className="space-y-3 max-h-96 overflow-y-auto">
+            {insights.map((insight: any, idx: number) => (
               <div
                 key={idx}
                 className="flex items-start space-x-3 bg-white/5 rounded-lg p-4"
               >
                 <XCircle className="w-5 h-5 text-red-400 mt-0.5" />
                 <div className="flex-1">
-                  <p className="text-white font-medium">{issue.message}</p>
+                  <p className="text-white font-medium">
+                    {insight.message || insight.issue || JSON.stringify(insight)}
+                  </p>
+                  {insight.column && (
+                    <p className="text-sm text-gray-400 mt-1">
+                      Column: <span className="text-gray-300">{insight.column}</span>
+                      {insight.percent && ` • ${insight.percent.toFixed(1)}% affected`}
+                    </p>
+                  )}
+                  {insight.severity && (
+                    <p className="text-sm text-gray-400 mt-1">
+                      Severity: <span className="capitalize text-yellow-400">{insight.severity}</span>
+                    </p>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        </Card>
+      )}
+
+      {/* Recommendations */}
+      {recommendations && recommendations.length > 0 && (
+        <Card className="bg-blue-500/10 backdrop-blur-sm border-blue-500/30">
+          <h3 className="text-xl font-semibold text-white mb-4 flex items-center">
+            <Sparkles className="w-5 h-5 mr-2 text-blue-400" />
+            Recommendations ({recommendations.length})
+          </h3>
+          <div className="space-y-3">
+            {recommendations.map((rec: any, idx: number) => (
+              <div
+                key={idx}
+                className="flex items-start space-x-3 bg-blue-500/10 rounded-lg p-4"
+              >
+                <CheckCircle className="w-5 h-5 text-blue-400 mt-0.5" />
+                <div className="flex-1">
+                  <p className="text-white font-medium">{rec.action}</p>
                   <p className="text-sm text-gray-400 mt-1">
-                    Severity: <span className="capitalize">{issue.severity}</span>
+                    Priority: <span className="capitalize text-blue-400">{rec.priority}</span>
+                    {rec.impact && ` • Impact: ${rec.impact}`}
                   </p>
                 </div>
               </div>
