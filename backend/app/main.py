@@ -665,10 +665,15 @@ async def smart_data_analysis(file: UploadFile = File(...)):
         else:
             raise HTTPException(status_code=400, detail="Unsupported file format")
 
-        # Use rule-based analysis for instant feedback
-        # TODO: Integrate Mistral LLM analysis asynchronously in the future for richer insights
-        analysis = local_analytics.analyze_data_quality(df)
-        analysis["note"] = "Using intelligent analysis with automatic imputation strategies"
+        # Use Mistral 7B LLM via Ollama for intelligent analysis
+        analysis = smart_analyzer.analyze_data_quality(df)
+
+        # If LLM analysis failed or timed out, fall back to rule-based
+        if not analysis.get("insights") or analysis.get("quality_score", 0) == 0:
+            analysis = local_analytics.analyze_data_quality(df)
+            analysis["note"] = "Using fallback rule-based analysis (Ollama/Mistral unavailable)"
+        else:
+            analysis["note"] = "Using Mistral 7B LLM analysis with automatic imputation strategies"
 
         return JSONResponse(
             content=json.loads(json.dumps(analysis, cls=NumpyEncoder))
