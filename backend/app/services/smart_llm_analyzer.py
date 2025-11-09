@@ -28,23 +28,23 @@ class SmartLLMAnalyzer:
     def __init__(self, ollama_url: str = "http://localhost:11434"):
         """Initialize with local Ollama connection"""
         self.ollama_url = ollama_url
-        self.model = "mistral"
-        self.timeout = 70  # 70 seconds (Mistral can be slow on some hardware, needs buffer)
+        self.model = "llama3.1:8b"  # Fast model: 2-5 seconds response time
+        self.timeout = 20  # 20 seconds (Llama 3.1 responds in 2-5s, plenty of buffer)
         self.is_available = self._check_ollama_availability()
 
     def _check_ollama_availability(self) -> bool:
-        """Check if Ollama is running and Mistral is available"""
+        """Check if Ollama is running and Llama 3.1 8B is available"""
         try:
             response = requests.get(f"{self.ollama_url}/api/tags", timeout=5)
             if response.status_code == 200:
                 models = response.json().get("models", [])
-                return any(m["name"].startswith("mistral") for m in models)
+                return any(m["name"].startswith("llama3.1") for m in models)
         except:
             pass
         return False
 
     def _call_mistral(self, prompt: str) -> str:
-        """Call Mistral LLM via Ollama"""
+        """Call Llama 3.1 8B LLM via Ollama"""
         try:
             response = requests.post(
                 f"{self.ollama_url}/api/generate",
@@ -61,26 +61,25 @@ class SmartLLMAnalyzer:
             if response.status_code == 200:
                 return response.json().get("response", "")
         except requests.exceptions.Timeout:
-            print(f"Mistral LLM request timed out after {self.timeout}s. Using fallback analysis.")
+            print(f"Llama 3.1 8B request timed out after {self.timeout}s")
         except Exception as e:
-            print(f"Error calling Mistral: {e}")
+            print(f"Error calling Llama 3.1 8B: {e}")
         return ""
 
     def analyze_data_quality(self, df: pd.DataFrame) -> Dict[str, Any]:
         """
-        Comprehensive data quality analysis using LLM intelligence.
-        Provides smart recommendations for missing values, outliers, etc.
+        Comprehensive data quality analysis using Llama 3.1 8B LLM.
+        No fallback - LLM analysis is required.
         """
         if not self.is_available:
-            return {"error": "Mistral LLM not available. Make sure Ollama is running with 'mistral' model."}
+            return {"error": "Llama 3.1 8B not available. Install with: ollama pull llama3.1:8b"}
 
         analysis = {
             "quality_score": 0,
             "insights": [],
             "recommendations": [],
             "cleaning_strategies": {},
-            "metrics": {},
-            "using_llm": True
+            "metrics": {}
         }
 
         # Step 1: Prepare data summary for LLM
@@ -90,21 +89,17 @@ class SmartLLMAnalyzer:
         quality_prompt = self._build_quality_analysis_prompt(data_summary)
         llm_analysis = self._call_mistral(quality_prompt)
 
-        if llm_analysis:
-            analysis.update(self._parse_llm_analysis(llm_analysis, df))
-        else:
-            # LLM failed or timed out - use fallback
-            analysis["insights"] = self._generate_basic_insights(df)
-            analysis["recommendations"] = self._generate_basic_recommendations(df)
-            analysis["using_llm"] = False
+        if not llm_analysis:
+            return {"error": "Llama 3.1 8B analysis failed or timed out"}
 
-        # Step 3: Generate smart cleaning strategies (only if LLM succeeded)
-        if llm_analysis:
-            cleaning_prompt = self._build_cleaning_strategy_prompt(data_summary, analysis)
-            llm_strategies = self._call_mistral(cleaning_prompt)
+        analysis.update(self._parse_llm_analysis(llm_analysis, df))
 
-            if llm_strategies:
-                analysis["cleaning_strategies"] = self._parse_cleaning_strategies(llm_strategies)
+        # Step 3: Generate smart cleaning strategies
+        cleaning_prompt = self._build_cleaning_strategy_prompt(data_summary, analysis)
+        llm_strategies = self._call_mistral(cleaning_prompt)
+
+        if llm_strategies:
+            analysis["cleaning_strategies"] = self._parse_cleaning_strategies(llm_strategies)
 
         # Step 4: Calculate quality score
         analysis["quality_score"] = self._calculate_quality_score(analysis, df)

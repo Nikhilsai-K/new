@@ -632,10 +632,11 @@ async def generate_comprehensive_report(file: UploadFile = File(...)):
 
 @app.post("/api/local-analysis/smart")
 async def smart_data_analysis(file: UploadFile = File(...)):
-    """Advanced LLM-powered data quality analysis using local Mistral model
+    """Advanced LLM-powered data quality analysis using Llama 3.1 8B
 
-    This endpoint uses a local Mistral 7B LLM running via Ollama to provide
-    intelligent data quality analysis. No data leaves your machine.
+    This endpoint uses Llama 3.1 8B running locally via Ollama for
+    intelligent data quality analysis. Fast (2-5s) and accurate.
+    No data leaves your machine.
 
     Returns:
     - Smart insights about data quality issues
@@ -643,11 +644,7 @@ async def smart_data_analysis(file: UploadFile = File(...)):
     - Automatic cleaning strategies for missing values
     - Quality score with detailed breakdown
 
-    Benefits over rule-based analysis:
-    - Understands data context and relationships
-    - Provides nuanced, human-like recommendations
-    - Automatically suggests best strategies (mean/median/mode for missing values)
-    - No manual prompting required - handles basic cases intelligently
+    Requires: ollama pull llama3.1:8b
     """
     try:
         contents = await file.read()
@@ -665,18 +662,17 @@ async def smart_data_analysis(file: UploadFile = File(...)):
         else:
             raise HTTPException(status_code=400, detail="Unsupported file format")
 
-        # Use Mistral 7B LLM via Ollama for intelligent analysis
+        # Use Llama 3.1 8B LLM via Ollama for intelligent analysis (no fallback)
         analysis = smart_analyzer.analyze_data_quality(df)
 
-        # Check if LLM actually succeeded (SmartLLMAnalyzer sets "using_llm" flag)
-        if analysis.get("using_llm"):
-            analysis["note"] = "Using Mistral 7B LLM analysis with automatic imputation strategies"
-        else:
-            # LLM timed out, use enhanced rule-based analysis
-            if analysis.get("error"):
-                analysis["note"] = f"Using rule-based analysis ({analysis.get('error')})"
-            else:
-                analysis["note"] = "Using rule-based analysis (Ollama/Mistral timed out or unavailable)"
+        # Llama 3.1 is required - no fallback to rules
+        if analysis.get("error"):
+            raise HTTPException(
+                status_code=503,
+                detail=f"Llama 3.1 8B not available: {analysis.get('error')}. Install with: ollama pull llama3.1:8b"
+            )
+
+        analysis["note"] = "Using Llama 3.1 8B LLM for intelligent data quality analysis"
 
         return JSONResponse(
             content=json.loads(json.dumps(analysis, cls=NumpyEncoder))
