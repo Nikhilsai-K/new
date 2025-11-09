@@ -29,7 +29,7 @@ class SmartLLMAnalyzer:
         """Initialize with local Ollama connection"""
         self.ollama_url = ollama_url
         self.model = "mistral"
-        self.timeout = 60  # 60 seconds for LLM analysis
+        self.timeout = 70  # 70 seconds (Mistral can be slow on some hardware, needs buffer)
         self.is_available = self._check_ollama_availability()
 
     def _check_ollama_availability(self) -> bool:

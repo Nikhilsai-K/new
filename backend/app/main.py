@@ -668,12 +668,15 @@ async def smart_data_analysis(file: UploadFile = File(...)):
         # Use Mistral 7B LLM via Ollama for intelligent analysis
         analysis = smart_analyzer.analyze_data_quality(df)
 
-        # If LLM analysis failed or timed out, fall back to rule-based
-        if not analysis.get("insights") or analysis.get("quality_score", 0) == 0:
-            analysis = local_analytics.analyze_data_quality(df)
-            analysis["note"] = "Using fallback rule-based analysis (Ollama/Mistral unavailable)"
-        else:
+        # Check if LLM actually succeeded (SmartLLMAnalyzer sets "using_llm" flag)
+        if analysis.get("using_llm"):
             analysis["note"] = "Using Mistral 7B LLM analysis with automatic imputation strategies"
+        else:
+            # LLM timed out, use enhanced rule-based analysis
+            if analysis.get("error"):
+                analysis["note"] = f"Using rule-based analysis ({analysis.get('error')})"
+            else:
+                analysis["note"] = "Using rule-based analysis (Ollama/Mistral timed out or unavailable)"
 
         return JSONResponse(
             content=json.loads(json.dumps(analysis, cls=NumpyEncoder))
