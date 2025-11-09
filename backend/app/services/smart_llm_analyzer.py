@@ -28,8 +28,8 @@ class SmartLLMAnalyzer:
     def __init__(self, ollama_url: str = "http://localhost:11434"):
         """Initialize with local Ollama connection"""
         self.ollama_url = ollama_url
-        self.model = "llama3.1:8b"  # Fast model: 2-5 seconds response time
-        self.timeout = 20  # 20 seconds (Llama 3.1 responds in 2-5s, plenty of buffer)
+        self.model = "llama3.1:8b"  # Fast model optimized for MacBook (2-5s for simple tasks)
+        self.timeout = 90  # 90 seconds for complex data analysis with full prompts
         self.is_available = self._check_ollama_availability()
 
     def _check_ollama_availability(self) -> bool:
@@ -85,7 +85,7 @@ class SmartLLMAnalyzer:
         # Step 1: Prepare data summary for LLM
         data_summary = self._prepare_data_summary(df)
 
-        # Step 2: Use LLM to analyze data quality
+        # Step 2: Use LLM to analyze data quality (single call for speed)
         quality_prompt = self._build_quality_analysis_prompt(data_summary)
         llm_analysis = self._call_mistral(quality_prompt)
 
@@ -93,13 +93,6 @@ class SmartLLMAnalyzer:
             return {"error": "Llama 3.1 8B analysis failed or timed out"}
 
         analysis.update(self._parse_llm_analysis(llm_analysis, df))
-
-        # Step 3: Generate smart cleaning strategies
-        cleaning_prompt = self._build_cleaning_strategy_prompt(data_summary, analysis)
-        llm_strategies = self._call_mistral(cleaning_prompt)
-
-        if llm_strategies:
-            analysis["cleaning_strategies"] = self._parse_cleaning_strategies(llm_strategies)
 
         # Step 4: Calculate quality score
         analysis["quality_score"] = self._calculate_quality_score(analysis, df)
@@ -172,12 +165,12 @@ Missing Values Analysis:
 Column Details:
 {json.dumps(summary['column_details'], indent=2)}
 
-Please provide:
-1. A list of identified data quality issues (each as {{message, severity, column, percent, description}})
-2. A list of recommendations (each as {{action, priority, impact, description}})
+Please provide (in JSON format):
+1. "issues": List of data quality issues (each with: message, severity, column, percent, description)
+2. "recommendations": List of actions (each with: action, priority, impact, description)
+3. "cleaning_strategies": For each problematic column, suggest the best cleaning approach
 
-Format your response as JSON with "issues" and "recommendations" arrays.
-Be specific about which columns have problems and why."""
+Return ONLY valid JSON with these three keys. Be specific about column names and why each issue matters."""
 
     def _build_cleaning_strategy_prompt(self, summary: Dict, analysis: Dict) -> str:
         """Build a prompt to generate smart cleaning strategies"""
