@@ -29,7 +29,7 @@ class SmartLLMAnalyzer:
         """Initialize with local Ollama connection"""
         self.ollama_url = ollama_url
         self.model = "llama3.1:8b"  # Fast model optimized for MacBook (2-5s for simple tasks)
-        self.timeout = 90  # 90 seconds for complex data analysis with full prompts
+        self.timeout = 60  # 60 seconds for LLM analysis (Llama 3.1 8B on MacBook hardware)
         self.is_available = self._check_ollama_availability()
 
     def _check_ollama_availability(self) -> bool:
@@ -100,7 +100,7 @@ class SmartLLMAnalyzer:
         return analysis
 
     def _prepare_data_summary(self, df: pd.DataFrame) -> Dict[str, Any]:
-        """Prepare a concise data summary for LLM analysis"""
+        """Prepare a comprehensive data summary for LLM analysis"""
         numeric_cols = df.select_dtypes(include=[np.number]).columns.tolist()
         categorical_cols = df.select_dtypes(include=['object']).columns.tolist()
 
@@ -112,7 +112,8 @@ class SmartLLMAnalyzer:
             "categorical_columns": categorical_cols,
             "missing_analysis": {},
             "duplicates": len(df) - len(df.drop_duplicates()),
-            "column_details": {}
+            "column_details": {},
+            "sample_rows": df.head(5).to_dict(orient='records')  # Show first 5 rows as examples
         }
 
         # Missing value analysis per column
@@ -134,43 +135,61 @@ class SmartLLMAnalyzer:
                         "max": float(df[col].max()),
                         "mean": float(df[col].mean()),
                         "std": float(df[col].std()),
-                        "has_missing": bool(missing_count > 0)
+                        "has_missing": bool(missing_count > 0),
+                        "sample_values": df[col].dropna().head(3).tolist()
                     }
                 except:
                     summary["column_details"][col] = {"type": "numeric", "error": "Could not compute stats"}
             else:
                 unique_count = df[col].nunique()
+                sample_values = df[col].dropna().unique()[:5].tolist() if len(df[col].dropna()) > 0 else []
                 summary["column_details"][col] = {
                     "type": "categorical",
                     "unique_values": int(unique_count),
-                    "has_missing": bool(missing_count > 0)
+                    "has_missing": bool(missing_count > 0),
+                    "sample_values": sample_values
                 }
 
         return summary
 
     def _build_quality_analysis_prompt(self, summary: Dict) -> str:
-        """Build a prompt for LLM to analyze data quality"""
-        return f"""Analyze this dataset for data quality issues and provide insights and recommendations.
+        """Build a COMPREHENSIVE prompt for LLM to analyze data quality issues"""
+        return f"""Analyze this dataset THOROUGHLY for ALL data quality issues.
 
-Dataset Summary:
-- Total Rows: {summary['total_rows']}
-- Total Columns: {summary['total_columns']}
-- Numeric Columns: {summary['numeric_columns']}
-- Categorical Columns: {summary['categorical_columns']}
-- Duplicates: {summary['duplicates']}
+SAMPLE DATA (first 5 rows - examine these carefully):
+{json.dumps(summary['sample_rows'], indent=2)}
 
-Missing Values Analysis:
-{json.dumps(summary['missing_analysis'], indent=2)}
-
-Column Details:
+COLUMN DETAILS:
 {json.dumps(summary['column_details'], indent=2)}
 
-Please provide (in JSON format):
-1. "issues": List of data quality issues (each with: message, severity, column, percent, description)
-2. "recommendations": List of actions (each with: action, priority, impact, description)
-3. "cleaning_strategies": For each problematic column, suggest the best cleaning approach
+MISSING VALUES:
+{json.dumps(summary['missing_analysis'], indent=2)}
 
-Return ONLY valid JSON with these three keys. Be specific about column names and why each issue matters."""
+DATASET: {summary['total_rows']} rows, {summary['total_columns']} columns
+DUPLICATES: {summary['duplicates']}
+
+CHECK FOR ALL THESE ISSUES:
+1. Missing/incomplete values (NULL, empty, incomplete like "charlie@")
+2. Format inconsistencies (dates: YYYY-MM-DD vs YYYY/MM/DD, phones: 555-1234 vs 5551234)
+3. Invalid formats (bad emails, bad dates, letters in numbers)
+4. Data type mismatches (numbers stored as text, dates as text)
+5. Suspicious values (zeros, "test", "unknown", outliers)
+6. Duplicates and whitespace issues
+
+EXAMINE sample_values in each column - look for format problems and inconsistencies.
+
+Return ONLY valid JSON:
+{{
+  "issues": [
+    {{"message": "Description of issue", "severity": "high/medium/low", "column": "column_name", "percent": 10, "description": "Why this matters"}}
+  ],
+  "recommendations": [
+    {{"action": "What to do", "priority": "high/medium/low", "impact": "effect", "description": "How to fix"}}
+  ],
+  "cleaning_strategies": {{
+    "column_name": {{"strategy": "remove/standardize_format/fillna_median/etc"}}
+  }}
+}}"""
 
     def _build_cleaning_strategy_prompt(self, summary: Dict, analysis: Dict) -> str:
         """Build a prompt to generate smart cleaning strategies"""
@@ -205,9 +224,22 @@ Format as JSON with column-specific strategies. Example:
     def _parse_llm_analysis(self, llm_response: str, df: pd.DataFrame) -> Dict[str, Any]:
         """Parse LLM response and extract insights/recommendations"""
         try:
-            # Try to extract JSON from response
+            # Try to extract JSON from response - handle multiple attempts
             start = llm_response.find('{')
-            end = llm_response.rfind('}') + 1
+            end = -1
+            brace_count = 0
+
+            if start >= 0:
+                # Find matching closing brace
+                for i in range(start, len(llm_response)):
+                    if llm_response[i] == '{':
+                        brace_count += 1
+                    elif llm_response[i] == '}':
+                        brace_count -= 1
+                        if brace_count == 0:
+                            end = i + 1
+                            break
+
             if start >= 0 and end > start:
                 json_str = llm_response[start:end]
                 parsed = json.loads(json_str)
@@ -216,25 +248,34 @@ Format as JSON with column-specific strategies. Example:
                     "insights": parsed.get("issues", []),
                     "recommendations": parsed.get("recommendations", [])
                 }
-        except:
+        except Exception as e:
+            print(f"JSON parsing failed: {e}")
             pass
 
         # Fallback: Extract insights from raw response
         insights = []
         recommendations = []
 
-        for line in llm_response.split('\n'):
-            if 'missing' in line.lower() and '%' in line:
-                insights.append({
-                    "message": line.strip(),
-                    "severity": "high" if "high" in line.lower() else "medium",
-                    "column": "various",
-                    "description": line.strip()
-                })
-            elif 'recommend' in line.lower() or 'should' in line.lower():
+        # Look for issue patterns in the response
+        lines = llm_response.split('\n')
+        for i, line in enumerate(lines):
+            line_lower = line.lower()
+
+            # Detect issue lines
+            if any(x in line_lower for x in ['missing', 'invalid', 'format', 'incomplete', 'mismatch', 'inconsist']):
+                if any(x in line for x in ['%', 'rows', 'values', 'column']):
+                    insights.append({
+                        "message": line.strip()[:100],
+                        "severity": "high" if any(x in line_lower for x in ['critical', 'error', 'invalid']) else "medium",
+                        "column": "multiple",
+                        "description": line.strip()
+                    })
+
+            # Detect recommendation lines
+            if any(x in line_lower for x in ['recommend', 'should', 'fix', 'correct', 'standardize', 'remove']):
                 recommendations.append({
-                    "action": line.strip(),
-                    "priority": "medium",
+                    "action": line.strip()[:100],
+                    "priority": "high" if any(x in line_lower for x in ['critical', 'important']) else "medium",
                     "description": line.strip()
                 })
 
