@@ -14,6 +14,7 @@ export default function Home() {
   const data = useData()
   const [loading, setLoading] = useState(false)
   const [cleaningStatus, setCleaningStatus] = useState<'idle' | 'cleaning' | 'done'>('idle')
+  const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8001'
 
   const handleFileSelect = async (selectedFile: File) => {
     setLoading(true)
@@ -95,7 +96,6 @@ export default function Home() {
       const formData = new FormData()
       formData.append('file', selectedFile)
 
-      const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8001'
       // Use smart LLM endpoint for intelligent analysis (if available)
       const response = await fetch(`${apiUrl}/api/local-analysis/smart`, {
         method: 'POST',
@@ -116,14 +116,65 @@ export default function Home() {
   }
 
   const handleCleanData = async () => {
-    if (!data.originalData) return
+    if (!data.originalData || !data.originalAnalysis) {
+      alert('Please run analysis first before cleaning')
+      return
+    }
 
     setCleaningStatus('cleaning')
 
     try {
-      // Remove duplicates and recalculate statistics
-      const cleanedRows = data.originalData.allData.filter((row, idx, arr) => {
-        return arr.findIndex(r => JSON.stringify(r) === JSON.stringify(row)) === idx
+      // Convert original data to CSV for backend
+      const csvContent = [
+        data.originalData.columnNames.join(','),
+        ...data.originalData.allData.map(row =>
+          data.originalData!.columnNames.map(col => {
+            const value = row[col]
+            if (value === null || value === undefined) return ''
+            if (typeof value === 'string' && value.includes(',')) {
+              return `"${value}"`
+            }
+            return value
+          }).join(',')
+        ),
+      ].join('\n')
+
+      // Create form data with file and LLM analysis
+      const blob = new Blob([csvContent], { type: 'text/csv' })
+      const file = new File([blob], data.originalData.filename, { type: 'text/csv' })
+
+      const formData = new FormData()
+      formData.append('file', file)
+      // Pass LLM analysis with cleaning strategies to backend
+      formData.append('analysis', JSON.stringify(data.originalAnalysis))
+
+      // Call smart cleaning endpoint
+      const response = await fetch(`${apiUrl}/api/clean-data-smart`, {
+        method: 'POST',
+        body: formData,
+      })
+
+      if (!response.ok) {
+        const error = await response.json()
+        throw new Error(error.detail || 'Cleaning failed')
+      }
+
+      const cleaningResult = await response.json()
+
+      // Parse cleaned CSV back to data structure
+      const cleanedCsv = cleaningResult.cleaned_csv
+      const lines = cleanedCsv.trim().split('\n')
+      const headers = lines[0].split(',')
+
+      const cleanedRows = lines.slice(1).map((line: string) => {
+        // Simple CSV parsing (handles basic cases)
+        const values = line.split(',')
+        const row: any = {}
+        headers.forEach((header: string, idx: number) => {
+          const value = values[idx]?.trim() || ''
+          row[header] = value === '' ? null : value
+        })
+        return row
       })
 
       // Recalculate statistics for cleaned data
@@ -132,9 +183,9 @@ export default function Home() {
       const stats: any = {}
 
       data.originalData.columnNames.forEach(col => {
-        const values = cleanedRows.map(row => row[col]).filter(v => v !== null && v !== undefined && v !== '')
+        const values = cleanedRows.map((row: any) => row[col]).filter((v: any) => v !== null && v !== undefined && v !== '')
 
-        const numericValues = values.map(v => parseFloat(v as string)).filter(v => !isNaN(v))
+        const numericValues = values.map((v: any) => parseFloat(v as string)).filter((v: number) => !isNaN(v))
 
         if (numericValues.length > 0 && numericValues.length / values.length > 0.8) {
           numericColumns.push(col)
@@ -142,11 +193,11 @@ export default function Home() {
           stats[col] = {
             type: 'numeric',
             count: values.length,
-            mean: (numericValues.reduce((a, b) => a + b, 0) / numericValues.length).toFixed(2),
+            mean: (numericValues.reduce((a: number, b: number) => a + b, 0) / numericValues.length).toFixed(2),
             min: Math.min(...numericValues).toFixed(2),
             max: Math.max(...numericValues).toFixed(2),
             std: (Math.sqrt(
-              numericValues.reduce((sq, n) => sq + Math.pow(n - (numericValues.reduce((a, b) => a + b, 0) / numericValues.length), 2), 0) / numericValues.length
+              numericValues.reduce((sq: number, n: number) => sq + Math.pow(n - (numericValues.reduce((a: number, b: number) => a + b, 0) / numericValues.length), 2), 0) / numericValues.length
             )).toFixed(2),
           }
         } else {
@@ -171,13 +222,15 @@ export default function Home() {
         numericColumns,
         categoricalColumns,
         stats,
+        cleaningReport: cleaningResult.report,
+        cleaningSummary: cleaningResult.data_summary,
       }
 
       data.setCleanedData(cleanedData)
       setCleaningStatus('done')
     } catch (error) {
       console.error('Error cleaning data:', error)
-      alert('Error cleaning data')
+      alert(`Error cleaning data: ${error}`)
       setCleaningStatus('idle')
     }
   }

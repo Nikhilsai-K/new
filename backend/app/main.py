@@ -15,6 +15,7 @@ from app.services.llm_service import LLMService
 from app.services.visualization_service import VisualizationService
 from app.services.local_analytics_llm import LocalAnalyticsLLM
 from app.services.smart_llm_analyzer import SmartLLMAnalyzer
+from app.services.smart_data_cleaner import SmartDataCleaner
 from app.api.industrial_llm import router as industrial_llm_router
 
 load_dotenv()
@@ -64,6 +65,7 @@ llm_service = LLMService()
 visualization_service = VisualizationService()
 local_analytics = LocalAnalyticsLLM()
 smart_analyzer = SmartLLMAnalyzer()  # LLM-powered intelligent analysis
+smart_cleaner = SmartDataCleaner()  # Applies LLM-recommended cleaning strategies
 
 # Include API routers
 app.include_router(industrial_llm_router)
@@ -680,6 +682,93 @@ async def smart_data_analysis(file: UploadFile = File(...)):
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/clean-data-smart")
+async def clean_data_smart(
+    file: UploadFile = File(...),
+    analysis: Optional[str] = None
+):
+    """Apply LLM-recommended cleaning strategies to data
+
+    Uses Llama 3.1 8B insights to intelligently clean data:
+    - Missing value imputation (mean, median, mode based on column type)
+    - Duplicate removal
+    - Outlier handling
+    - Data type consistency
+
+    Accepts:
+    - file: CSV/Excel file to clean
+    - analysis: JSON string from /api/local-analysis/smart with cleaning_strategies
+
+    Returns:
+    - Cleaned data as CSV
+    - Detailed cleaning report with statistics
+    """
+    try:
+        contents = await file.read()
+
+        if len(contents) > MAX_UPLOAD_SIZE:
+            raise HTTPException(
+                status_code=413,
+                detail=f"File too large. Maximum size is 500MB, got {len(contents) / (1024*1024):.2f}MB"
+            )
+
+        if file.filename.endswith('.csv'):
+            df = pd.read_csv(io.BytesIO(contents))
+        elif file.filename.endswith(('.xlsx', '.xls')):
+            df = pd.read_excel(io.BytesIO(contents))
+        else:
+            raise HTTPException(status_code=400, detail="Unsupported file format")
+
+        # Parse LLM analysis if provided
+        llm_analysis = {}
+        if analysis:
+            try:
+                llm_analysis = json.loads(analysis)
+            except json.JSONDecodeError:
+                llm_analysis = {}
+
+        # Apply smart cleaning using LLM-recommended strategies
+        cleaning_result = smart_cleaner.clean_data(df, llm_analysis)
+
+        if not cleaning_result.get("success"):
+            raise HTTPException(
+                status_code=400,
+                detail=f"Cleaning failed: {cleaning_result.get('error', 'Unknown error')}"
+            )
+
+        cleaned_df = cleaning_result["cleaned_data"]
+        report = cleaning_result.get("report", {})
+
+        # Convert cleaned data to CSV
+        csv_buffer = io.StringIO()
+        cleaned_df.to_csv(csv_buffer, index=False)
+        csv_content = csv_buffer.getvalue()
+
+        response_data = {
+            "success": True,
+            "filename": file.filename,
+            "cleaned_csv": csv_content,
+            "report": report,
+            "data_summary": {
+                "rows_before": report.get("original_rows", 0),
+                "rows_after": report.get("cleaned_rows", 0),
+                "rows_removed": report.get("rows_removed", 0),
+                "columns": report.get("cleaned_cols", 0),
+                "missing_values_remaining": report.get("missing_values_remaining", 0)
+            },
+            "steps_applied": report.get("steps_applied", [])
+        }
+
+        return JSONResponse(
+            content=json.loads(json.dumps(response_data, cls=NumpyEncoder))
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Cleaning error: {str(e)}")
 
 
 if __name__ == "__main__":
