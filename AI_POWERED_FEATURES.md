@@ -203,36 +203,147 @@ if is_numeric(col): return "bar"  # ❌ Basic
 ## 🚀 API Endpoints (New)
 
 ### **Smart Cleaning**
-```
+```bash
 POST /api/clean-data-smart
-- Executes ALL AI recommendations
+- Executes ALL AI recommendations automatically
 - Returns cleaned file + detailed report
+- Uses ML-powered SmartDataCleaner
+
+# Example using curl:
+curl -X POST "http://localhost:8000/api/clean-data-smart" \
+  -F "file=@sales_data.csv"
+
+# Response: Cleaned CSV/Excel file with report header
 ```
 
 ### **AI Chart Selection**
-```
+```bash
 POST /api/ai/recommend-chart
-- Body: { x_column, y_column?, data_sample }
-- Returns: Best chart type + reasoning
+- Parameters: x_column (required), y_column (optional)
+- Returns: AI-recommended chart type + reasoning + insights
+
+# Example using curl:
+curl -X POST "http://localhost:8000/api/ai/recommend-chart" \
+  -F "file=@sales_data.csv" \
+  -F "x_column=date" \
+  -F "y_column=revenue"
+
+# Response:
+{
+  "success": true,
+  "recommendation": {
+    "chart_type": "line",
+    "reasoning": "Time series data shows clear trends over time",
+    "alternatives": ["area", "bar"],
+    "title": "Revenue Growth Over Time",
+    "x_axis_label": "Date",
+    "y_axis_label": "Revenue ($)",
+    "insights": [
+      "Revenue increased 23% in Q4",
+      "Seasonal pattern detected in summer months"
+    ]
+  }
+}
 ```
 
 ### **Intelligent Dashboard**
-```
+```bash
 POST /api/ai/generate-dashboard
 - Upload file
-- Returns: Complete dashboard specification
-- 4-6 AI-selected charts
-- Key metrics
-- Responsive layout
+- Returns: Complete AI-designed dashboard
+- 4-6 charts + metrics + layout + theme
+
+# Example using curl:
+curl -X POST "http://localhost:8000/api/ai/generate-dashboard" \
+  -F "file=@sales_data.csv"
+
+# Response:
+{
+  "success": true,
+  "dashboard": {
+    "title": "Sales Performance Dashboard",
+    "subtitle": "Revenue shows 18% growth with top 3 products accounting for 60% of sales",
+    "metrics": [
+      {
+        "name": "Total Revenue",
+        "value": 1234567.89,
+        "format": "currency",
+        "icon": "dollar-sign"
+      }
+    ],
+    "charts": [
+      {
+        "type": "line",
+        "title": "Revenue Trend Over Time",
+        "position": 1,
+        "size": "large",
+        "insight": "Revenue increased 23% from Q1 to Q4"
+      }
+    ],
+    "layout": {
+      "type": "responsive_grid",
+      "max_columns": 12,
+      "gap": "20px"
+    },
+    "theme": {
+      "primary": "#1f77b4",
+      "palette": ["#1f77b4", "#ff7f0e", "#2ca02c"]
+    }
+  }
+}
 ```
 
 ### **Executive Dashboard**
-```
+```bash
 POST /api/ai/executive-dashboard
-- Simplified for C-level
-- Max 4 charts
-- Large metrics
-- Trend indicators
+- Simplified for C-level executives
+- Max 4 charts, large metrics
+- Trend indicators (↑ 5.2% vs last month)
+
+# Example using curl:
+curl -X POST "http://localhost:8000/api/ai/executive-dashboard" \
+  -F "file=@business_data.csv"
+
+# Response: Same structure as generate-dashboard, but optimized for executives
+```
+
+### **Tableau-Style Recommendations**
+```bash
+GET /api/ai/tableau-recommendations
+- Tableau "Show Me" feature
+- Returns all possible chart types for dataset
+
+# Example using curl:
+curl -X POST "http://localhost:8000/api/ai/tableau-recommendations" \
+  -F "file=@data.csv"
+
+# Response:
+{
+  "success": true,
+  "recommendations": {
+    "recommendations": [
+      {
+        "type": "line",
+        "priority": "high",
+        "use_case": "Show trends over time",
+        "x": "date",
+        "y": "revenue"
+      },
+      {
+        "type": "bar",
+        "priority": "high",
+        "use_case": "Compare categories",
+        "x": "product",
+        "y": "sales"
+      }
+    ],
+    "data_profile": {
+      "numeric_columns": 5,
+      "categorical_columns": 3,
+      "datetime_columns": 1
+    }
+  }
+}
 ```
 
 ---
