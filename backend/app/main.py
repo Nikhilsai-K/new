@@ -16,6 +16,9 @@ from app.services.visualization_service import VisualizationService
 from app.services.local_analytics_llm import LocalAnalyticsLLM
 from app.services.smart_llm_analyzer import SmartLLMAnalyzer
 from app.services.smart_data_cleaner import SmartDataCleaner
+from app.services.database_connector import DatabaseConnector
+from app.services.eda_service import EDAService
+from app.services.notebook_export import NotebookExporter
 from app.api.industrial_llm import router as industrial_llm_router
 
 load_dotenv()
@@ -66,6 +69,9 @@ visualization_service = VisualizationService()
 local_analytics = LocalAnalyticsLLM()
 smart_analyzer = SmartLLMAnalyzer()  # LLM-powered intelligent analysis
 smart_cleaner = SmartDataCleaner()  # Applies LLM-recommended cleaning strategies
+db_connector = DatabaseConnector()  # Database connectivity
+eda_service = EDAService()  # Exploratory Data Analysis
+notebook_exporter = NotebookExporter()  # Jupyter Notebook export
 
 # Include API routers
 app.include_router(industrial_llm_router)
@@ -680,8 +686,13 @@ async def smart_data_analysis(file: UploadFile = File(...)):
             content=json.loads(json.dumps(analysis, cls=NumpyEncoder))
         )
 
+    except HTTPException:
+        raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        import traceback
+        error_msg = f"{type(e).__name__}: {str(e)}\n{traceback.format_exc()}"
+        print(error_msg)
+        raise HTTPException(status_code=500, detail=str(e) or f"Internal error: {type(e).__name__}")
 
 
 @app.post("/api/clean-data-smart")
@@ -769,6 +780,252 @@ async def clean_data_smart(
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Cleaning error: {str(e)}")
+
+
+# ============ NEW DATABASE & EDA ENDPOINTS ============
+
+class DatabaseConfig(BaseModel):
+    source_type: str
+    config: dict
+
+
+@app.post("/api/database/connect")
+async def connect_database(db_config: DatabaseConfig):
+    """Connect to a database and return data with EDA"""
+    try:
+        # Connect to database
+        df = db_connector.connect(db_config.source_type, db_config.config)
+
+        # Perform EDA
+        eda_results = eda_service.analyze(df)
+
+        return JSONResponse(
+            content=json.loads(json.dumps({
+                "success": True,
+                "eda": eda_results,
+                "connection_info": {
+                    "source_type": db_config.source_type,
+                    "host": db_config.config.get('host'),
+                    "database": db_config.config.get('database'),
+                    "query": db_config.config.get('query')
+                }
+            }, cls=NumpyEncoder))
+        )
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/eda/analyze")
+async def analyze_file(file: UploadFile = File(...)):
+    """Upload a file and perform EDA"""
+    try:
+        contents = await file.read()
+
+        if len(contents) > MAX_UPLOAD_SIZE:
+            raise HTTPException(
+                status_code=413,
+                detail=f"File too large. Maximum size is 500MB"
+            )
+
+        # Read file
+        if file.filename.endswith('.csv'):
+            df = pd.read_csv(io.BytesIO(contents))
+        elif file.filename.endswith(('.xlsx', '.xls')):
+            df = pd.read_excel(io.BytesIO(contents))
+        else:
+            raise HTTPException(status_code=400, detail="Unsupported file format")
+
+        # Perform EDA
+        eda_results = eda_service.analyze(df)
+
+        return JSONResponse(
+            content=json.loads(json.dumps({
+                "success": True,
+                "eda": eda_results,
+                "filename": file.filename
+            }, cls=NumpyEncoder))
+        )
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+class ExportRequest(BaseModel):
+    analysis_data: dict
+
+
+@app.post("/api/export/jupyter")
+async def export_jupyter(request: ExportRequest):
+    """Export analysis to Jupyter Notebook"""
+    try:
+        eda_results = request.analysis_data.get('eda', {})
+        connection_info = request.analysis_data.get('connection_info')
+
+        # Generate notebook
+        notebook_json = notebook_exporter.export_to_ipynb(eda_results, connection_info)
+
+        # Return as downloadable file
+        return StreamingResponse(
+            io.BytesIO(notebook_json.encode()),
+            media_type="application/x-ipynb+json",
+            headers={"Content-Disposition": "attachment; filename=analysis.ipynb"}
+        )
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/export/colab")
+async def export_colab(request: ExportRequest):
+    """Export analysis to Google Colab"""
+    try:
+        eda_results = request.analysis_data.get('eda', {})
+        connection_info = request.analysis_data.get('connection_info')
+
+        # Generate notebook
+        notebook = notebook_exporter.create_notebook(eda_results, connection_info)
+
+        # Generate Colab URL
+        colab_url = notebook_exporter.generate_colab_url(notebook)
+
+        return JSONResponse(
+            content={
+                "success": True,
+                "colab_url": colab_url,
+                "notebook": notebook
+            }
+        )
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/dashboard/upload")
+async def dashboard_upload(file: UploadFile = File(...)):
+    """Upload file for business dashboard"""
+    try:
+        contents = await file.read()
+
+        if len(contents) > MAX_UPLOAD_SIZE:
+            raise HTTPException(
+                status_code=413,
+                detail=f"File too large. Maximum size is 500MB"
+            )
+
+        # Read file
+        if file.filename.endswith('.csv'):
+            df = pd.read_csv(io.BytesIO(contents))
+        elif file.filename.endswith(('.xlsx', '.xls')):
+            df = pd.read_excel(io.BytesIO(contents))
+        else:
+            raise HTTPException(status_code=400, detail="Unsupported file format")
+
+        # Calculate dashboard metrics
+        total_records = len(df)
+        total_revenue = 0
+        active_users = 0
+        conversion_rate = 0
+
+        # Try to find common business metrics
+        numeric_cols = df.select_dtypes(include=[np.number]).columns.tolist()
+        if len(numeric_cols) > 0:
+            # Assume first numeric column might be revenue-related
+            total_revenue = df[numeric_cols[0]].sum() if len(numeric_cols) > 0 else 0
+
+        return JSONResponse(
+            content=json.loads(json.dumps({
+                "success": True,
+                "total_records": total_records,
+                "total_revenue": total_revenue,
+                "active_users": active_users,
+                "conversion_rate": conversion_rate,
+                "columns": df.columns.tolist(),
+                "sample_data": df.head(100).to_dict(orient='records')
+            }, cls=NumpyEncoder))
+        )
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/dashboard/connect")
+async def dashboard_connect(db_config: DatabaseConfig):
+    """Connect database for business dashboard"""
+    try:
+        # Connect to database
+        df = db_connector.connect(db_config.source_type, db_config.config)
+
+        # Calculate dashboard metrics
+        total_records = len(df)
+        total_revenue = 0
+        active_users = 0
+        conversion_rate = 0
+
+        # Try to find common business metrics
+        numeric_cols = df.select_dtypes(include=[np.number]).columns.tolist()
+        if len(numeric_cols) > 0:
+            total_revenue = df[numeric_cols[0]].sum()
+
+        return JSONResponse(
+            content=json.loads(json.dumps({
+                "success": True,
+                "total_records": total_records,
+                "total_revenue": total_revenue,
+                "active_users": active_users,
+                "conversion_rate": conversion_rate,
+                "columns": df.columns.tolist(),
+                "sample_data": df.head(100).to_dict(orient='records')
+            }, cls=NumpyEncoder))
+        )
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/database/list-tables")
+async def list_database_tables(db_config: DatabaseConfig):
+    """List all tables in the connected database (Tableau/Power BI-style table browser)"""
+    try:
+        tables = db_connector.list_tables(db_config.source_type, db_config.config)
+
+        return JSONResponse(
+            content={
+                "success": True,
+                "tables": tables,
+                "count": len(tables)
+            }
+        )
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+class TableSchemaRequest(BaseModel):
+    source_type: str
+    config: dict
+    table_name: str
+
+
+@app.post("/api/database/table-schema")
+async def get_table_schema(request: TableSchemaRequest):
+    """Get columns/schema for a specific table (Tableau/Power BI-style column selector)"""
+    try:
+        schema = db_connector.get_table_schema(
+            request.source_type,
+            request.config,
+            request.table_name
+        )
+
+        return JSONResponse(
+            content={
+                "success": True,
+                "schema": schema
+            }
+        )
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 if __name__ == "__main__":

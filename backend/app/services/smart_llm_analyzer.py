@@ -153,43 +153,22 @@ class SmartLLMAnalyzer:
         return summary
 
     def _build_quality_analysis_prompt(self, summary: Dict) -> str:
-        """Build a COMPREHENSIVE prompt for LLM to analyze data quality issues"""
-        return f"""Analyze this dataset THOROUGHLY for ALL data quality issues.
+        """Build optimized prompt for LLM data quality analysis"""
+        return f"""Analyze dataset for quality issues. Check sample data for:
+1. Missing/incomplete values (NULL, empty, partial like "charlie@")
+2. Format inconsistencies (dates YYYY-MM-DD vs YYYY/MM/DD, phones 555-1234 vs 5554444)
+3. Data type issues (emails/dates in wrong columns, text as numbers)
 
-SAMPLE DATA (first 5 rows - examine these carefully):
-{json.dumps(summary['sample_rows'], indent=2)}
+SAMPLE DATA:
+{json.dumps(summary['sample_rows'][:3], indent=2)}
 
-COLUMN DETAILS:
-{json.dumps(summary['column_details'], indent=2)}
+COLUMNS & SAMPLE VALUES:
+{json.dumps({col: summary['column_details'][col].get('sample_values', []) for col in list(summary['column_details'].keys())[:8]}, indent=2)}
 
-MISSING VALUES:
-{json.dumps(summary['missing_analysis'], indent=2)}
+Dataset: {summary['total_rows']} rows, duplicates: {summary['duplicates']}
 
-DATASET: {summary['total_rows']} rows, {summary['total_columns']} columns
-DUPLICATES: {summary['duplicates']}
-
-CHECK FOR ALL THESE ISSUES:
-1. Missing/incomplete values (NULL, empty, incomplete like "charlie@")
-2. Format inconsistencies (dates: YYYY-MM-DD vs YYYY/MM/DD, phones: 555-1234 vs 5551234)
-3. Invalid formats (bad emails, bad dates, letters in numbers)
-4. Data type mismatches (numbers stored as text, dates as text)
-5. Suspicious values (zeros, "test", "unknown", outliers)
-6. Duplicates and whitespace issues
-
-EXAMINE sample_values in each column - look for format problems and inconsistencies.
-
-Return ONLY valid JSON:
-{{
-  "issues": [
-    {{"message": "Description of issue", "severity": "high/medium/low", "column": "column_name", "percent": 10, "description": "Why this matters"}}
-  ],
-  "recommendations": [
-    {{"action": "What to do", "priority": "high/medium/low", "impact": "effect", "description": "How to fix"}}
-  ],
-  "cleaning_strategies": {{
-    "column_name": {{"strategy": "remove/standardize_format/fillna_median/etc"}}
-  }}
-}}"""
+Return JSON with issues found:
+{{"issues": [{{"message": "issue desc", "severity": "high/medium/low", "column": "name"}}], "recommendations": [{{"action": "what to do", "priority": "high/medium/low"}}]}}"""
 
     def _build_cleaning_strategy_prompt(self, summary: Dict, analysis: Dict) -> str:
         """Build a prompt to generate smart cleaning strategies"""
