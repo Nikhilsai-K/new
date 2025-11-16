@@ -19,6 +19,7 @@ from app.services.smart_data_cleaner import SmartDataCleaner
 from app.services.database_connector import DatabaseConnector
 from app.services.eda_service import EDAService
 from app.services.notebook_export import NotebookExporter
+from app.services.ai_dashboard_service import AIDashboardService
 from app.api.industrial_llm import router as industrial_llm_router
 
 load_dotenv()
@@ -72,6 +73,7 @@ smart_cleaner = SmartDataCleaner()  # Applies LLM-recommended cleaning strategie
 db_connector = DatabaseConnector()  # Database connectivity
 eda_service = EDAService()  # Exploratory Data Analysis
 notebook_exporter = NotebookExporter()  # Jupyter Notebook export
+ai_dashboard = AIDashboardService()  # AI-powered dashboard generation
 
 # Include API routers
 app.include_router(industrial_llm_router)
@@ -1026,6 +1028,63 @@ async def get_table_schema(request: TableSchemaRequest):
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/dashboard/ai-generate")
+async def generate_ai_dashboard(file: UploadFile = File(...)):
+    """Generate AI-powered Tableau/Power BI-style dashboard using Llama 3.1 8B
+
+    This endpoint uses Llama 3.1 8B to:
+    - Analyze data semantics (understand revenue, dates, categories, etc.)
+    - Recommend best visualizations based on data relationships
+    - Create professional dashboard with diverse chart types
+    - Provide actionable insights and storytelling
+
+    Returns:
+    - Dashboard configuration with 5-8 intelligent chart recommendations
+    - Each chart includes: title, type, columns, story, insight, and Plotly config
+    - Source: llama3.1_8b for transparency
+
+    Requires: ollama pull llama3.1:8b
+    """
+    try:
+        contents = await file.read()
+
+        if len(contents) > MAX_UPLOAD_SIZE:
+            raise HTTPException(
+                status_code=413,
+                detail=f"File too large. Maximum size is 500MB"
+            )
+
+        # Read file
+        if file.filename.endswith('.csv'):
+            df = pd.read_csv(io.BytesIO(contents))
+        elif file.filename.endswith(('.xlsx', '.xls')):
+            df = pd.read_excel(io.BytesIO(contents))
+        else:
+            raise HTTPException(status_code=400, detail="Unsupported file format")
+
+        # Generate AI-powered dashboard
+        dashboard = ai_dashboard.generate_ai_dashboard(df)
+
+        # Check if AI is available
+        if dashboard.get("error"):
+            raise HTTPException(
+                status_code=503,
+                detail=f"Llama 3.1 8B not available: {dashboard.get('error')}. Install with: ollama pull llama3.1:8b"
+            )
+
+        return JSONResponse(
+            content=json.loads(json.dumps(dashboard, cls=NumpyEncoder))
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        import traceback
+        error_msg = f"{type(e).__name__}: {str(e)}\n{traceback.format_exc()}"
+        print(error_msg)
+        raise HTTPException(status_code=500, detail=str(e) or f"Internal error: {type(e).__name__}")
 
 
 if __name__ == "__main__":
